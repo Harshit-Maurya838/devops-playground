@@ -96,7 +96,7 @@ assert_passes "${SCRIPT_DIR}/play.sh check" "play.sh check awards XP"
 # --- Mission 05 ---
 echo -e "\n${YELLOW}▶ Testing Mission 05: 05-ssh${RESET}"
 "${SCRIPT_DIR}/play.sh" start 05 >/dev/null
-if command -v sshpass >/dev/null && ssh -o BatchMode=yes -o ConnectTimeout=2 targetuser@target-server "echo ok" >/dev/null 2>&1 || ping -c 1 target-server >/dev/null 2>&1; then
+if python3 -c 'import socket; s = socket.create_connection(("target-server", 22), timeout=2)' >/dev/null 2>&1; then
     assert_fails "${SCRIPT_DIR}/missions/05-ssh/check.sh" "Unsolved state"
     mkdir -p /home/player/.ssh
     if [[ ! -f /home/player/.ssh/id_ed25519 ]]; then
@@ -104,12 +104,8 @@ if command -v sshpass >/dev/null && ssh -o BatchMode=yes -o ConnectTimeout=2 tar
     fi
     sshpass -p insecure_temp_pass ssh-copy-id -o StrictHostKeyChecking=no targetuser@target-server >/dev/null 2>&1 || true
     scp -o StrictHostKeyChecking=no targetuser@target-server:/opt/tokens/secret_token.txt /home/player/mission-05/secret_token.txt >/dev/null 2>&1 || true
-    if [[ -f /home/player/mission-05/secret_token.txt ]]; then
-        assert_passes "${SCRIPT_DIR}/missions/05-ssh/check.sh" "Solved state"
-        assert_passes "${SCRIPT_DIR}/play.sh check" "play.sh check awards XP"
-    else
-        echo "  [SKIP] target-server ssh container unreachable in this environment"
-    fi
+    assert_passes "${SCRIPT_DIR}/missions/05-ssh/check.sh" "Solved state"
+    assert_passes "${SCRIPT_DIR}/play.sh check" "play.sh check awards XP"
 else
     echo "  [SKIP] target-server ssh container not online in standalone host mode"
 fi
@@ -120,7 +116,8 @@ echo -e "\n${YELLOW}▶ Testing Mission 06: 06-services${RESET}"
 assert_fails "${SCRIPT_DIR}/missions/06-services/check.sh" "Unsolved state"
 # Solve
 sed -i 's/PORT=INVALID_PORT_ABC/PORT=5000/' /etc/order-processor/config.env
-systemctl restart order-processor >/dev/null 2>&1 || sudo systemctl restart order-processor >/dev/null 2>&1 || true
+sudo systemctl restart order-processor >/dev/null 2>&1 || systemctl restart order-processor >/dev/null 2>&1 || true
+sleep 1
 assert_passes "${SCRIPT_DIR}/missions/06-services/check.sh" "Solved state"
 assert_passes "${SCRIPT_DIR}/play.sh check" "play.sh check awards XP"
 

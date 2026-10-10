@@ -29,7 +29,9 @@ cat <<'EOF' > "${TARGET_DIR}/deploy.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="./secret_vault.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/secret_vault.env"
+RECORD_FILE="${SCRIPT_DIR}/deployment.success"
 
 echo "🚀 Starting automated deployment..."
 
@@ -57,7 +59,7 @@ fi
 # Simulate deployment process
 echo "📦 Injecting environment credentials..."
 echo "✅ Verification passed. Generating deployment record..."
-echo "DEPLOYMENT_SUCCESSFUL=true" > ./deployment.success
+echo "DEPLOYMENT_SUCCESSFUL=true" > "${RECORD_FILE}"
 echo "🎉 Deployment successfully completed!"
 EOF
 

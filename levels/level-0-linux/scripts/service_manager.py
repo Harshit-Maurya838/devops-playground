@@ -12,14 +12,18 @@ import signal
 import subprocess
 import configparser
 import datetime
+import errno
 
 RUN_DIR = "/run/systemd_units"
 LOG_DIR = "/var/log/journal"
 UNIT_DIR = "/etc/systemd/system"
 
-os.makedirs(RUN_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(UNIT_DIR, exist_ok=True)
+for d in (RUN_DIR, LOG_DIR, UNIT_DIR):
+    os.makedirs(d, exist_ok=True)
+    try:
+        os.chmod(d, 0o777)
+    except Exception:
+        pass
 
 def normalize_unit_name(name):
     if not name.endswith(".service"):
@@ -54,7 +58,14 @@ def get_pid(unit_name):
             # Check if process is alive
             os.kill(pid, 0)
             return pid
-        except (ValueError, OSError):
+        except PermissionError:
+            # EPERM: Process exists and is alive, but owned by another user (e.g. root)
+            return pid
+        except (ValueError, ProcessLookupError):
+            return None
+        except OSError as e:
+            if hasattr(e, "errno") and e.errno == errno.EPERM:
+                return pid
             return None
     return None
 
@@ -107,6 +118,13 @@ def start_unit(unit_name):
                         proc_env[k.strip()] = v
 
     log_path = os.path.join(LOG_DIR, f"{unit_name}.log")
+    try:
+        if not os.path.exists(log_path):
+            with open(log_path, "w") as _:
+                pass
+            os.chmod(log_path, 0o666)
+    except Exception:
+        pass
     log_file = open(log_path, "a", buffering=1)
 
     ts = datetime.datetime.now().strftime("%b %d %H:%M:%S")

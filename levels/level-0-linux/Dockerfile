@@ -24,7 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Process and system inspection
     procps \
     psmisc \
-    top \
     htop \
     lsof \
     # Networking and ports
@@ -53,20 +52,23 @@ RUN groupadd -g 1000 player && \
     useradd -u 1000 -g player -m -s /bin/bash player && \
     echo "player ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Create standard working directories
+# Copy game files to template location and default /game
+COPY --chown=player:player . /opt/game_template
+COPY --chown=player:player . /game
+
+# Ensure permissions
+RUN chown -R player:player /game /opt/game_template
+
+# Create entrypoint script to populate /game if mounted from an unshared host path
+RUN echo '#!/usr/bin/env bash\n\
+set -e\n\
+if [ ! -f /game/play.sh ]; then\n\
+    cp -a /opt/game_template/. /game/\n\
+fi\n\
+chown -R player:player /game 2>/dev/null || true\n\
+chown -R player:player /home/player 2>/dev/null || true\n\
+exec "$@"\n' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
+
 WORKDIR /game
-
-# Ensure ssh client directory exists with correct permissions
-RUN mkdir -p /home/player/.ssh && \
-    chown -R player:player /home/player/.ssh && \
-    chmod 700 /home/player/.ssh
-
-# Configure friendly shell prompt for learner
-RUN echo 'export PS1="\[\033[01;32m\]player@devops-sandbox\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "' >> /home/player/.bashrc && \
-    echo 'echo -e "\033[1;36mWelcome to DevOps Playground - Level 0!\033[0m Run \033[1;33m./play.sh\033[0m to view your active mission."' >> /home/player/.bashrc
-
-# Ensure /game is accessible by player
-RUN chown -R player:player /game
-
-USER player
-CMD ["/bin/bash"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["sleep", "infinity"]

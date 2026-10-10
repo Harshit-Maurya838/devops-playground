@@ -78,8 +78,12 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-# Reset logs for unit
+# Reset logs for unit and ensure permissive directory modes
+sudo mkdir -p /var/log/journal /run/systemd_units
+sudo chmod 777 /var/log/journal /run/systemd_units
 sudo rm -f /var/log/journal/order-processor.service.log
+sudo touch /var/log/journal/order-processor.service.log
+sudo chmod 666 /var/log/journal/order-processor.service.log
 
 # 5. Attempt startup to trigger the initial failure state
 systemctl start order-processor >/dev/null 2>&1 || true
