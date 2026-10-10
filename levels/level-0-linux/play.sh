@@ -335,14 +335,19 @@ cmd_hint() {
     echo -e "${YELLOW}${BOLD}💡 HINT ${current_lvl} of 3 for ${current_m}:${RESET}"
     echo ""
 
-    python3 - <<EOF
-with open("${mission_md}") as f:
+    python3 - "${mission_md}" "${current_lvl}" <<'EOF'
+import sys
+
+mission_file = sys.argv[1]
+hint_num = sys.argv[2]
+
+with open(mission_file, "r") as f:
     content = f.read()
 
-target_heading = f"### Hint {current_lvl}:"
+target_heading = f"### Hint {hint_num}:"
 if target_heading in content:
     part = content.split(target_heading, 1)[1]
-    # Split at next hint or end
+    # Split at next hint or end of file
     if "### Hint " in part:
         hint_text = part.split("### Hint ")[0]
     else:
@@ -357,7 +362,15 @@ EOF
 cmd_reset() {
     local current_m
     current_m=$(get_current_mission)
-    echo -e "${YELLOW}🔄 Resetting environment for ${current_m}...${RESET}"
+    echo -e "${YELLOW}🔄 Resetting environment and hints for ${current_m}...${RESET}"
+    python3 -c "
+import json
+with open('${PROGRESS_FILE}', 'r') as f:
+    data = json.load(f)
+data['missions']['${current_m}']['hint_level'] = 0
+with open('${PROGRESS_FILE}', 'w') as f:
+    json.dump(data, f, indent=2)
+"
     cmd_start "${current_m}"
 }
 
