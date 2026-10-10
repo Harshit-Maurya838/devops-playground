@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # The learner's interactive sandbox container
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devops-sandbox
+    hostname: devops-sandbox
+    user: player
+    stdin_open: true
+    tty: true
+    working_dir: /game
+    volumes:
+      - ./:/game
+      - ssh-target-auth:/var/targetuser-ssh
+    networks:
+      - devops-net
+    depends_on:
+      - ssh-target
+    command: ["/bin/bash"]
+
+  # Remote target server used in Mission 05 (SSH)
+  ssh-target:
+    image: ubuntu:22.04
+    container_name: target-server
+    hostname: target-server
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+    volumes:
+      - ssh-target-data:/opt/tokens
+      - ssh-target-auth:/home/targetuser/.ssh
+    networks:
+      - devops-net
+    command: >
+      bash -c "
+        apt-get update && apt-get install -y openssh-server sudo &&
+        mkdir -p /var/run/sshd /opt/tokens &&
+        useradd -m -s /bin/bash targetuser &&
+        echo 'targetuser:insecure_temp_pass' | chpasswd &&
+        mkdir -p /home/targetuser/.ssh &&
+        chown -R targetuser:targetuser /home/targetuser/.ssh &&
+        chmod 700 /home/targetuser/.ssh &&
+        echo 'SECRET_FLAG{ssh_k3y_auth_mast3r_2026}' > /opt/tokens/secret_token.txt &&
+        chmod 644 /opt/tokens/secret_token.txt &&
+        sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config &&
+        sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config &&
+        /usr/sbin/sshd -D
+      "
+
+volumes:
+  ssh-target-data:
+  ssh-target-auth:
+
+networks:
+  devops-net:
+    driver: bridge
