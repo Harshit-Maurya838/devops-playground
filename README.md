@@ -21,7 +21,7 @@ An open-source interactive learning platform that teaches modern DevOps, Cloud E
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/devops-playground.git
+git clone https://github.com/Harshit-Maurya838/devops-playground.git
 cd devops-playground/levels/level-0-linux
 
 # 2. Start the container sandbox
