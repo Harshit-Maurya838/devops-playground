@@ -5,7 +5,20 @@
 # ==============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to find real script location regardless of working directory
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+
+# Safety fallback if script directory somehow does not contain missions/
+if [[ ! -d "${SCRIPT_DIR}/missions" && -d "/game/missions" ]]; then
+    SCRIPT_DIR="/game"
+fi
+
 PROGRESS_FILE="${SCRIPT_DIR}/progress.json"
 
 # ANSI Color definitions
@@ -34,9 +47,10 @@ MISSIONS=(
 # ------------------------------------------------------------------------------
 init_progress() {
     if [[ ! -f "${PROGRESS_FILE}" ]]; then
-        python3 - <<'EOF'
-import json
+        python3 - "${PROGRESS_FILE}" <<'EOF'
+import sys, json
 
+progress_file = sys.argv[1]
 progress = {
     "total_xp": 0,
     "max_xp": 450,
@@ -52,7 +66,7 @@ progress = {
     }
 }
 
-with open("progress.json", "w") as f:
+with open(progress_file, "w") as f:
     json.dump(progress, f, indent=2)
 EOF
     fi
@@ -231,12 +245,14 @@ print(d['missions']['${m_id}']['status'])
     echo ""
 
     echo -e "${BOLD}Current Active Mission:${RESET} ${YELLOW}${current_m}${RESET}"
-    echo -e "Available commands:"
-    echo -e "  ${BOLD}./play.sh start [id]${RESET}  - Setup and begin a mission"
-    echo -e "  ${BOLD}./play.sh check${RESET}       - Verify your solution and earn XP"
-    echo -e "  ${BOLD}./play.sh hint${RESET}        - Get progressive hints (1 to 3)"
-    echo -e "  ${BOLD}./play.sh reset${RESET}       - Reset current mission environment"
-    echo -e "  ${BOLD}./play.sh solution${RESET}    - View the complete solution guide"
+    echo -e "Available commands (usable from ANY folder):"
+    echo -e "  ${BOLD}play start [id]${RESET}    - Setup and begin a mission"
+    echo -e "  ${BOLD}play briefing${RESET}      - View current mission briefing & instructions"
+    echo -e "  ${BOLD}play check${RESET}         - Verify your solution from anywhere and earn XP"
+    echo -e "  ${BOLD}play hint${RESET}          - Unlock progressive hints (1 to 3)"
+    echo -e "  ${BOLD}play reset${RESET}         - Reset current mission environment"
+    echo -e "  ${BOLD}play solution${RESET}      - View the complete solution guide"
+    echo -e "  ${BOLD}play status${RESET}        - View XP roadmap and mission progress"
     echo ""
 }
 
@@ -246,7 +262,7 @@ cmd_start() {
 
     local mission_dir="${SCRIPT_DIR}/missions/${target}"
     if [[ ! -d "${mission_dir}" ]]; then
-        echo -e "${RED}❌ Unknown mission '${target}'. Run './play.sh status' to view all missions.${RESET}"
+        echo -e "${RED}❌ Unknown mission '${target}'. Run 'play status' to view all missions.${RESET}"
         exit 1
     fi
 
@@ -259,17 +275,42 @@ cmd_start() {
         "${mission_dir}/setup.sh"
     fi
 
-    echo ""
-    # Display the mission briefing
-    if [[ -f "${mission_dir}/mission.md" ]]; then
+    # Determine XP
+    local xp="50"
+    if [[ "${target}" == "boss-cpu-hog" ]]; then
+        xp="150"
+    fi
+
+    # Display the beautifully rendered mission briefing
+    if [[ -f "${SCRIPT_DIR}/scripts/ui_renderer.py" ]]; then
+        python3 "${SCRIPT_DIR}/scripts/ui_renderer.py" briefing "${mission_dir}" "${target}" "${xp}"
+    elif [[ -f "${mission_dir}/mission.md" ]]; then
         echo -e "${BOLD}${MAGENTA}--- MISSION BRIEFING ---${RESET}"
         cat "${mission_dir}/mission.md"
         echo -e "${BOLD}${MAGENTA}------------------------${RESET}"
     fi
+}
 
-    echo ""
-    echo -e "${GREEN}✨ Mission environment is ready!${RESET}"
-    echo -e "Follow the instructions above, then test your fix with: ${BOLD}./play.sh check${RESET}"
+cmd_briefing() {
+    local target="${1:-$(get_current_mission)}"
+    target=$(normalize_mission_id "${target}")
+
+    local mission_dir="${SCRIPT_DIR}/missions/${target}"
+    if [[ ! -d "${mission_dir}" ]]; then
+        echo -e "${RED}❌ Unknown mission '${target}'. Run 'play status' to view all missions.${RESET}"
+        exit 1
+    fi
+
+    local xp="50"
+    if [[ "${target}" == "boss-cpu-hog" ]]; then
+        xp="150"
+    fi
+
+    if [[ -f "${SCRIPT_DIR}/scripts/ui_renderer.py" ]]; then
+        python3 "${SCRIPT_DIR}/scripts/ui_renderer.py" briefing "${mission_dir}" "${target}" "${xp}"
+    elif [[ -f "${mission_dir}/mission.md" ]]; then
+        cat "${mission_dir}/mission.md"
+    fi
 }
 
 cmd_check() {
@@ -307,14 +348,14 @@ cmd_check() {
         next_m=$(get_current_mission)
         if [[ "${next_m}" != "${current_m}" ]]; then
             echo -e "Next mission unlocked: ${YELLOW}${BOLD}${next_m}${RESET}!"
-            echo -e "Type ${BOLD}./play.sh start${RESET} to jump right in."
+            echo -e "Type ${BOLD}play start${RESET} to jump right in."
         else
             echo -e "🏆 ${BOLD}ALL LEVEL 0 MISSIONS COMPLETED! YOU CONQUERED THE LINUX SHELL!${RESET}"
         fi
     else
         echo ""
         echo -e "${YELLOW}Don't worry! Every great DevOps engineer debugs through trials.${RESET}"
-        echo -e "Need a nudge? Type: ${BOLD}./play.sh hint${RESET}"
+        echo -e "Need a nudge? Type: ${BOLD}play hint${RESET}"
         exit 1
     fi
 }
@@ -322,20 +363,22 @@ cmd_check() {
 cmd_hint() {
     local current_m
     current_m=$(get_current_mission)
-    local mission_md="${SCRIPT_DIR}/missions/${current_m}/mission.md"
+    local mission_dir="${SCRIPT_DIR}/missions/${current_m}"
 
-    if [[ ! -f "${mission_md}" ]]; then
-        echo -e "${RED}❌ mission.md not found.${RESET}"
+    if [[ ! -f "${mission_dir}/mission.md" ]]; then
+        echo -e "${RED}❌ mission.md not found for ${current_m}.${RESET}"
         exit 1
     fi
 
     local current_lvl
     current_lvl=$(increment_hint_level "${current_m}")
 
-    echo -e "${YELLOW}${BOLD}💡 HINT ${current_lvl} of 3 for ${current_m}:${RESET}"
-    echo ""
-
-    python3 - "${mission_md}" "${current_lvl}" <<'EOF'
+    if [[ -f "${SCRIPT_DIR}/scripts/ui_renderer.py" ]]; then
+        python3 "${SCRIPT_DIR}/scripts/ui_renderer.py" hint "${mission_dir}" "${current_m}" "${current_lvl}"
+    else
+        echo -e "${YELLOW}${BOLD}💡 HINT ${current_lvl} of 3 for ${current_m}:${RESET}"
+        echo ""
+        python3 - "${mission_dir}/mission.md" "${current_lvl}" <<'EOF'
 import sys
 
 mission_file = sys.argv[1]
@@ -347,7 +390,6 @@ with open(mission_file, "r") as f:
 target_heading = f"### Hint {hint_num}:"
 if target_heading in content:
     part = content.split(target_heading, 1)[1]
-    # Split at next hint or end of file
     if "### Hint " in part:
         hint_text = part.split("### Hint ")[0]
     else:
@@ -356,7 +398,8 @@ if target_heading in content:
 else:
     print("No additional hints available for this mission.")
 EOF
-    echo ""
+        echo ""
+    fi
 }
 
 cmd_reset() {
@@ -377,20 +420,40 @@ with open('${PROGRESS_FILE}', 'w') as f:
 cmd_solution() {
     local current_m
     current_m=$(get_current_mission)
-    local sol_file="${SCRIPT_DIR}/missions/${current_m}/solution.md"
+    local mission_dir="${SCRIPT_DIR}/missions/${current_m}"
+    local sol_file="${mission_dir}/solution.md"
 
     if [[ ! -f "${sol_file}" ]]; then
-        echo -e "${RED}❌ Solution file not found.${RESET}"
+        echo -e "${RED}❌ Solution file not found for ${current_m}.${RESET}"
         exit 1
     fi
 
-    read -p "⚠️  Are you sure you want to reveal the solution? (y/N): " -r answer
+    echo -e "${YELLOW}⚠️  Are you sure you want to reveal the solution? (y/N): ${RESET}\c"
+    read -r answer
     if [[ "${answer}" =~ ^[Yy]$ ]]; then
-        echo ""
-        cat "${sol_file}"
+        if [[ -f "${SCRIPT_DIR}/scripts/ui_renderer.py" ]]; then
+            python3 "${SCRIPT_DIR}/scripts/ui_renderer.py" solution "${mission_dir}" "${current_m}"
+        else
+            echo ""
+            cat "${sol_file}"
+        fi
     else
         echo "Keeping it secret! Keep hacking!"
     fi
+}
+
+cmd_help() {
+    banner
+    echo -e "${BOLD}DevOps Playground Command Reference:${RESET}"
+    echo -e "  ${BOLD}play${RESET}                - Show current mission status and XP roadmap"
+    echo -e "  ${BOLD}play start [id]${RESET}     - Initialize and start a mission (e.g. 'play start 01')"
+    echo -e "  ${BOLD}play briefing${RESET}       - Read mission intel, objectives, and instructions"
+    echo -e "  ${BOLD}play check${RESET}          - Verify your solution from any directory"
+    echo -e "  ${BOLD}play hint${RESET}           - Reveal progressive hints without spoilers"
+    echo -e "  ${BOLD}play reset${RESET}          - Reset current mission environment & files"
+    echo -e "  ${BOLD}play solution${RESET}       - View the official walkthrough guide"
+    echo -e "  ${BOLD}play help${RESET}           - Show this command reference manual"
+    echo ""
 }
 
 # ------------------------------------------------------------------------------
@@ -408,6 +471,10 @@ case "${ACTION}" in
         shift
         cmd_start "$@"
         ;;
+    briefing|info|mission|story)
+        shift || true
+        cmd_briefing "$@"
+        ;;
     check)
         cmd_check
         ;;
@@ -419,6 +486,9 @@ case "${ACTION}" in
         ;;
     solution)
         cmd_solution
+        ;;
+    help|--help|-h)
+        cmd_help
         ;;
     shell|up)
         # Helper to launch Docker if run from host
@@ -432,7 +502,7 @@ case "${ACTION}" in
         ;;
     *)
         echo -e "${RED}Unknown command: ${ACTION}${RESET}"
-        echo "Usage: ./play.sh [status|start|check|hint|reset|solution]"
+        echo "Usage: play [status|start|briefing|check|hint|reset|solution|help]"
         exit 1
         ;;
 esac

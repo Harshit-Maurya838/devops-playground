@@ -54,24 +54,29 @@ docker compose exec -u player sandbox bash
 *(Alternatively, you can run `./play.sh shell` from your host).*
 
 ### Step 3: Run the Game CLI
-Inside the container, run:
+Inside the container, run the global `play` command from any directory:
 ```bash
-./play.sh
+play
 ```
+*(You can also use `./play.sh` from `/game`, but `play` is globally accessible anywhere!)*
+
 This displays your mission dashboard, current XP, and available tasks!
 
 ```bash
 # Start your first mission:
-./play.sh start 01
+play start 01
 
-# Test your solution when you think you've solved it:
-./play.sh check
+# Review mission intel & instructions at any time (from any folder):
+play briefing
 
-# If you get stuck, ask for a progressive hint:
-./play.sh hint
+# Test your solution when you think you've solved it (runs from anywhere):
+play check
+
+# If you get stuck, unlock progressive hints without spoilers:
+play hint
 
 # Need to start fresh? Reset the mission:
-./play.sh reset
+play reset
 ```
 
 ---

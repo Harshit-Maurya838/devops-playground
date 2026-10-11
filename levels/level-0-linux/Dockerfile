@@ -56,8 +56,11 @@ RUN groupadd -g 1000 player && \
 COPY --chown=player:player . /opt/game_template
 COPY --chown=player:player . /game
 
-# Ensure permissions
-RUN chown -R player:player /game /opt/game_template
+# Ensure permissions and create global play command
+RUN chown -R player:player /game /opt/game_template && \
+    chmod +x /game/play.sh /opt/game_template/play.sh && \
+    ln -sf /game/play.sh /usr/local/bin/play && \
+    echo 'alias play=/usr/local/bin/play' >> /etc/bash.bashrc
 
 # Create entrypoint script to populate /game if mounted from an unshared host path
 RUN echo '#!/usr/bin/env bash\n\
@@ -65,6 +68,8 @@ set -e\n\
 if [ ! -f /game/play.sh ]; then\n\
     cp -a /opt/game_template/. /game/\n\
 fi\n\
+ln -sf /game/play.sh /usr/local/bin/play 2>/dev/null || true\n\
+chmod +x /game/play.sh /usr/local/bin/play 2>/dev/null || true\n\
 chown -R player:player /game 2>/dev/null || true\n\
 chown -R player:player /home/player 2>/dev/null || true\n\
 exec "$@"\n' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
